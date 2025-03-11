@@ -1,0 +1,120 @@
+/* Global styles */
+body {
+  font-family: 'Arial', sans-serif;
+  background-color: #f2f4f8;
+  margin: 0;
+  padding: 20px;
+}
+
+/* Container styling */
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  background: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  padding: 30px;
+  border-radius: 8px;
+}
+
+/* Headings */
+h1, h2 {
+  text-align: center;
+  color: #333;
+}
+
+/* File Selection Section */
+#file-selection {
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+select, button {
+  font-size: 16px;
+  padding: 8px 12px;
+  margin: 10px 0;
+}
+
+/* Data Confirmation Section */
+#data-confirmation {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Transfer Information Box */
+.transfer-info {
+  background-color: #eef3f9;
+  border: 1px solid #d0d8e0;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+.transfer-info p {
+  margin: 5px 0;
+  font-size: 16px;
+}
+
+.transfer-info strong {
+  display: inline-block;
+  width: 150px;
+}
+
+/* Products Table Section */
+.product-table {
+  overflow-x: auto;
+}
+
+.product-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.product-table th, .product-table td {
+  border: 1px solid #ddd;
+  padding: 10px;
+  text-align: left;
+  font-size: 15px;
+}
+
+.product-table th {
+  background-color: #f7f7f7;
+}
+
+.product-table tr:nth-child(even) {
+  background-color: #f9f9f9;
+}
+
+/* Remove button style */
+.remove-btn {
+  background-color: #e74c3c;
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.remove-btn:hover {
+  background-color: #c0392b;
+}
+
+/* Approval and Cancel Buttons */
+.buttons {
+  text-align: center;
+  margin-top: 20px;
+}
+
+.buttons button {
+  background-color: #3498db;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 10px 20px;
+  font-size: 16px;
+  margin: 0 10px;
+}
+
+.buttons button:hover {
+  background-color: #2980b9;
+}

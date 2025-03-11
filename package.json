@@ -1,0 +1,23 @@
+{
+  "name": "auto-manifest",
+  "version": "1.0.0",
+  "main": "auto.js",
+  "scripts": {
+    "start": "node auto.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.41.1",
+    "ansi-colors": "^4.1.3",
+    "cli-progress": "^3.12.0",
+    "dotenv": "^16.4.1",
+    "inquirer": "^12.4.2",
+    "string-similarity": "^4.0.4",
+    "uuid": "^11.0.5",
+    "winston": "^3.11.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "electron": "^34.0.2"
+  }
+}

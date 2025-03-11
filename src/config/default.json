@@ -1,0 +1,119 @@
+{
+  "browser": {
+    "channel": "msedge",
+    "headless": false,
+    "timeout": {
+      "navigation": 30000,
+      "element": 20000,
+      "animation": 3000,
+      "pageLoad": 40000,
+      "retry": 5000
+    }
+  },
+  "retry": {
+    "attempts": 3,
+    "delay": 2000,
+    "maxDelay": 10000,
+    "backoffFactor": 1.5
+  },
+  "paths": {
+    "screenshots": "./screenshots",
+    "logs": "./logs",
+    "temp": "./temp",
+    "data": "./data"
+  },
+  "excel": {
+    "supportedFormats": [".xlsx", ".xls", ".xlsm"],
+    "productColumns": {
+      "barcode": 9,
+      "externalCode": 10,
+      "quantity": 11
+    },
+    "headerDetection": {
+      "fuzzyMatchThreshold": 0.6,
+      "maxSearchDepth": 20,
+      "skipEmptyRows": true
+    },
+    "dataValidation": {
+      "maxProducts": 500,
+      "requiredProductFields": ["barcode", "externalCode"],
+      "allowEmptyQuantity": true
+    }
+  },
+  "validation": {
+    "requiredFields": [
+      "store",
+      "driver1",
+      "vehicle",
+      "departureDate",
+      "arrivalDate"
+    ],
+    "dateRules": {
+      "minAdvanceTime": 1800000,
+      "maxTripDuration": 86400000,
+      "allowedDays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+      "allowedHours": {
+        "start": "06:00",
+        "end": "20:00"
+      }
+    }
+  },
+  "urls": {
+    "login": "https://curaleaf.sweedpos.com/logout",
+    "dashboard": "https://curaleaf.sweedpos.com/dashboard",
+    "transfers": "https://curaleaf.sweedpos.com/transfers"
+  },
+  "search": {
+    "patterns": {
+      "store": [
+        "store", "destination", "location", "facility", "to store",
+        "delivery location", "ship to", "receiving store", "dest store",
+        "target location", "destination facility"
+      ],
+      "driver1": [
+        "driver 1", "driver1", "first driver", "main driver", "driver one",
+        "primary driver", "driver name", "operator", "driver primary",
+        "lead driver", "principal driver"
+      ],
+      "driver2": [
+        "driver 2", "driver2", "second driver", "backup driver", "driver two",
+        "secondary driver", "assistant driver", "co-driver", "support driver",
+        "alternate driver", "relief driver"
+      ],
+      "vehicle": [
+        "vehicle", "car", "transport", "nissan", "car", "truck",
+        "vehicle id", "transport vehicle", "delivery vehicle", "van",
+        "vehicle number", "transport id", "vehicle registration"
+      ],
+      "departureDate": [
+        "departure", "depart", "leave", "start time", "departure time",
+        "pickup time", "collection time", "shipping time", "start date",
+        "departure schedule", "planned departure"
+      ],
+      "arrivalDate": [
+        "arrival", "arrive", "end time", "destination time", "arrival time",
+        "delivery time", "expected arrival", "eta", "arrival date",
+        "scheduled arrival", "expected delivery"
+      ],
+      "route": [
+        "route", "path", "directions", "travel plan", "planned route",
+        "delivery route", "transport path", "travel directions",
+        "route details", "journey plan", "travel route"
+      ]
+    },
+    "productPatterns": {
+      "barcode": [
+        "barcode", "sku", "item code", "product id", "item number",
+        "product code", "inventory id", "item id", "scan code"
+      ],
+      "externalCode": [
+        "external code", "external id", "alternate id", "reference number",
+        "alt code", "secondary id", "cross reference", "external reference"
+      ],
+      "quantity": [
+        "quantity", "qty", "amount", "units", "count", "pieces",
+        "package count", "item quantity", "unit count", "total units"
+      ]
+    }
+  }
+}
