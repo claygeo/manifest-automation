@@ -1,0 +1,98 @@
+{
+  "store": "FTP",
+  "toStore": "Ft Pierce Warehouse Hub",
+  "driver1": "Clay",
+  "driver2": "James Roberts",
+  "vehicle": "",
+  "route": "Ftp",
+  "departureDate": "3/13/2025",
+  "departureTime": "07:00 AM",
+  "arrivalTime": "12:00 PM",
+  "split": false,
+  "headers": [
+    "#",
+    "Last 4 of Barcode",
+    "Total Unit Count",
+    "Ocala Units",
+    "Ocala Cases",
+    "FTP Units",
+    "FTP Cases",
+    ""
+  ],
+  "transferData": [
+    {
+      "#": "1",
+      "Last 4 of Barcode": "1234",
+      "Total Unit Count": "50",
+      "Ocala Units": "35",
+      "Ocala Cases": "3",
+      "FTP Units": "15",
+      "FTP Cases": "1",
+      "": ""
+    },
+    {
+      "#": "2",
+      "Last 4 of Barcode": "5678",
+      "Total Unit Count": "70",
+      "Ocala Units": "50",
+      "Ocala Cases": "5",
+      "FTP Units": "20",
+      "FTP Cases": "2",
+      "": ""
+    },
+    {
+      "#": "3",
+      "Last 4 of Barcode": "9012",
+      "Total Unit Count": "40",
+      "Ocala Units": "28",
+      "Ocala Cases": "2",
+      "FTP Units": "12",
+      "FTP Cases": "1",
+      "": ""
+    },
+    {
+      "#": "4",
+      "Last 4 of Barcode": "3456",
+      "Total Unit Count": "60",
+      "Ocala Units": "42",
+      "Ocala Cases": "4",
+      "FTP Units": "18",
+      "FTP Cases": "1",
+      "": ""
+    },
+    {
+      "#": "5",
+      "Last 4 of Barcode": "2323",
+      "Total Unit Count": "80",
+      "Ocala Units": "55",
+      "Ocala Cases": "5",
+      "FTP Units": "25",
+      "FTP Cases": "2",
+      "": ""
+    },
+    {
+      "#": "6",
+      "Last 4 of Barcode": "3454",
+      "Total Unit Count": "45",
+      "Ocala Units": "30",
+      "Ocala Cases": "2",
+      "FTP Units": "15",
+      "FTP Cases": "1",
+      "": ""
+    },
+    {
+      "#": "7",
+      "Last 4 of Barcode": "2323",
+      "Total Unit Count": "65",
+      "Ocala Units": "45",
+      "Ocala Cases": "4",
+      "FTP Units": "20",
+      "FTP Cases": "2",
+      "": ""
+    }
+  ],
+  "stores": [
+    "Ocala",
+    "FTP"
+  ]
+}

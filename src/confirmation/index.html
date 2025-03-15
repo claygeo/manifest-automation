@@ -2,155 +2,200 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Confirm Transfer Data</title>
-  <link rel="stylesheet" href="style.css">
+  <title>Transfer Confirmation</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; }
+    .form-group { margin: 10px 0; }
+    table { border-collapse: collapse; width: 100%; margin: 20px 0; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background-color: #f2f2f2; }
+    button { margin: 5px; padding: 5px 10px; }
+  </style>
 </head>
 <body>
-  <div class="container">
-    <h1>Transfer Data Confirmation</h1>
-    
-    <!-- File Selection Section -->
-    <div id="file-selection">
-      <h2>Select an Excel File</h2>
-      <select id="excel-select"></select>
-      <button id="load-file-btn">Load File</button>
-    </div>
-
-    <!-- Data Confirmation Section (hidden until a file is loaded) -->
-    <div id="data-confirmation" style="display: none;">
-      <!-- Transfer Information Section -->
-      <div class="transfer-info">
-        <h2>Transfer Information</h2>
-        <p><strong>Store:</strong> <span id="store"></span></p>
-        <p><strong>Driver 1:</strong> <span id="driver1"></span></p>
-        <p><strong>Driver 2:</strong> <span id="driver2"></span></p>
-        <p><strong>Vehicle:</strong> <span id="vehicle"></span></p>
-        <p><strong>Departure Time:</strong> <span id="departureDate"></span></p>
-        <p><strong>Arrival Time:</strong> <span id="arrivalDate"></span></p>
-        <p><strong>Route/Description:</strong> <span id="route"></span></p>
-      </div>
-
-      <!-- Products Table Section -->
-      <div class="product-table">
-        <h2>Products</h2>
-        <table id="products-table">
-          <thead>
-            <tr>
-              <th>Product Name</th>
-              <th>Barcode</th>
-              <th>External Code</th>
-              <th>Quantity</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            <!-- Product rows will be inserted dynamically -->
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Approval/Cancel Buttons -->
-      <div class="buttons">
-        <button id="approve-btn">Approve All & Continue</button>
-        <button id="cancel-btn">Cancel</button>
-      </div>
-    </div>
+  <h2>Transfer Confirmation</h2>
+  <div class="form-group">
+    <label for="store">Select Store:</label>
+    <select id="store" onchange="updateDisplay()">
+      <option value="FTP">Ft. Pierce (FTP)</option>
+      <option value="Ocala">Ocala</option>
+      <option value="Homestead">Homestead</option>
+      <option value="Mt. Dora">Mt. Dora</option>
+    </select>
   </div>
+  <div class="form-group">
+    <label>To Store:</label>
+    <input type="text" id="toStore" readonly>
+  </div>
+  <div class="form-group">
+    <label>Driver 1:</label>
+    <input type="text" id="driver1" onchange="updateDrivers()">
+    <button onclick="clearDriver('driver1')">Clear</button>
+  </div>
+  <div class="form-group">
+    <label>Driver 2:</label>
+    <input type="text" id="driver2" onchange="updateDrivers()">
+    <button onclick="clearDriver('driver2')">Clear</button>
+  </div>
+  <div class="form-group">
+    <label>Vehicle:</label>
+    <input type="text" id="vehicle" placeholder="Enter vehicle number">
+  </div>
+  <div class="form-group">
+    <label>Route:</label>
+    <input type="text" id="route" placeholder="Enter route name">
+  </div>
+  <div class="form-group">
+    <label>Departure Date:</label>
+    <input type="text" id="departureDate" readonly>
+  </div>
+  <div class="form-group">
+    <label>Departure Time:</label>
+    <input type="text" id="departureTime">
+  </div>
+  <div class="form-group">
+    <label>Arrival Time:</label>
+    <input type="text" id="arrivalTime">
+  </div>
+  <div class="form-group">
+    <label for="split">Split:</label>
+    <input type="checkbox" id="split" name="split">
+  </div>
+  <table id="transferTable">
+    <thead>
+      <tr id="tableHeaders"></tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <button onclick="approveTransfer()">Approve</button>
+  <button onclick="cancelTransfer()">Cancel</button>
 
   <script>
-    let transferData = {};
-
-    window.api.onExcelFiles((files) => {
-      const select = document.getElementById('excel-select');
-      select.innerHTML = '';
-      if (files.length === 0) {
-        select.innerHTML = '<option>No Excel files found</option>';
-      } else {
-        files.forEach(file => {
-          const option = document.createElement('option');
-          option.value = file;
-          option.textContent = file.split(/[\\\/]/).pop();
-          select.appendChild(option);
-        });
+    const storeConfigs = {
+      FTP: {
+        toStore: 'Ft Pierce Warehouse Hub',
+        drivers: { driver1: 'Ange', driver2: 'James Roberts' },
+        departureTime: '07:00 AM',
+        arrivalTime: '12:00 PM'
+      },
+      Ocala: {
+        toStore: 'Ocala Warehouse Hub',
+        drivers: { driver1: 'Sergio Hervis', driver2: 'Courtney Bruce' },
+        departureTime: '12:00 PM',
+        arrivalTime: '07:00 PM'
+      },
+      Homestead: {
+        toStore: 'Homestead Processing Hub'
+      },
+      'Mt. Dora': {
+        toStore: 'Mt. Dora Processing Hub'
       }
+    };
+
+    let excelStores = [];
+    let excelHeaders = [];
+
+    window.api.onInitialData((data) => {
+      window.transferData = data.transferData;
+      document.getElementById('departureDate').value = data.currentDate;
+      excelStores = data.stores; // e.g., ["FTP", "Ocala"]
+      excelHeaders = data.headers; // e.g., ["#", "Last 4 of Barcode", "Total Unit Count", "FTP Units", "FTP Cases", "Ocala Units", "Ocala Cases"]
+      updateDisplay();
+      populateTable(data.transferData, 'FTP');
     });
 
-    document.getElementById('load-file-btn').addEventListener('click', () => {
-      const select = document.getElementById('excel-select');
-      const selectedFile = select.value;
-      if (selectedFile) {
-        window.api.selectExcel(selectedFile);
-      }
-    });
-
-    window.api.onTransferData((data) => {
-      console.log("Received transfer data:", data);
-      transferData = data;
-      document.getElementById('file-selection').style.display = 'none';
-      document.getElementById('data-confirmation').style.display = 'block';
-      populateTransferInfo(transferData);
-      renderProductTable(transferData.products);
-    });
-
-    function populateTransferInfo(data) {
-      document.getElementById('store').textContent = data.store || 'N/A';
-      document.getElementById('driver1').textContent = data.driver1 || 'N/A';
-      document.getElementById('driver2').textContent = data.driver2 || 'N/A';
-      document.getElementById('vehicle').textContent = data.vehicle || 'N/A';
-      document.getElementById('departureDate').textContent = data.departureDate ? new Date(data.departureDate).toLocaleString() : 'N/A';
-      document.getElementById('arrivalDate').textContent = data.arrivalDate ? new Date(data.arrivalDate).toLocaleString() : 'N/A';
-      document.getElementById('route').textContent = data.route || 'N/A';
+    function updateDisplay() {
+      const store = document.getElementById('store').value;
+      const config = storeConfigs[store];
+      document.getElementById('toStore').value = config.toStore;
+      document.getElementById('driver1').value = config.drivers?.driver1 || '';
+      document.getElementById('driver2').value = config.drivers?.driver2 || '';
+      document.getElementById('departureTime').value = config.departureTime || '';
+      document.getElementById('arrivalTime').value = config.arrivalTime || '';
+      populateTable(window.transferData, store);
     }
 
-    function renderProductTable(products) {
-      const tbody = document.getElementById('products-table').getElementsByTagName('tbody')[0];
+    function updateDrivers() {
+      // Allow manual override of drivers (no action needed here, just enable input)
+    }
+
+    function clearDriver(driverId) {
+      document.getElementById(driverId).value = '';
+    }
+
+    function populateTable(data, store) {
+      const thead = document.getElementById('tableHeaders');
+      const tbody = document.getElementById('tableBody');
+      thead.innerHTML = '';
       tbody.innerHTML = '';
-      products.forEach((product, index) => {
-        const row = document.createElement('tr');
 
-		const nameCell = document.createElement('td');
-		nameCell.textContent = product.productName || 'N/A';
-		row.appendChild(nameCell);
+      // Check if the selected store is in the Excel sheet
+      if (!excelStores.includes(store)) {
+        return; // Empty table if store not found in Excel
+      }
 
-		const barcodeCell = document.createElement('td');
-		barcodeCell.textContent = product.barcode || 'N/A';
-		row.appendChild(barcodeCell);
+      // Define relevant columns for the selected store
+      const relevantColumns = [
+        '#',
+        'Last 4 of Barcode',
+        'Total Unit Count',
+        `${store} Units`,
+        `${store} Cases`
+      ];
 
-		const extCodeCell = document.createElement('td');
-		extCodeCell.textContent = product.externalCode || 'N/A';
-		row.appendChild(extCodeCell);
+      // Populate headers
+      relevantColumns.forEach(header => {
+        if (excelHeaders.includes(header)) {
+          const th = document.createElement('th');
+          th.textContent = header;
+          thead.appendChild(th);
+        }
+      });
 
-		const qtyCell = document.createElement('td');
-		qtyCell.textContent = product.qty || 'N/A';
-		row.appendChild(qtyCell);
-
-        // Action column with Remove button
-        const actionCell = document.createElement('td');
-        const removeBtn = document.createElement('button');
-        removeBtn.textContent = 'Remove';
-        removeBtn.classList.add('remove-btn');
-        removeBtn.addEventListener('click', () => {
-          products.splice(index, 1);
-          renderProductTable(products);
+      // Populate data rows
+      data.forEach(row => {
+        const tr = document.createElement('tr');
+        relevantColumns.forEach(header => {
+          if (excelHeaders.includes(header)) {
+            const td = document.createElement('td');
+            td.textContent = row[header] || '';
+            tr.appendChild(td);
+          }
         });
-        actionCell.appendChild(removeBtn);
-        row.appendChild(actionCell);
-
-        tbody.appendChild(row);
+        tbody.appendChild(tr);
       });
     }
 
-    document.getElementById('approve-btn').addEventListener('click', () => {
-      window.api.sendApproval(transferData);
-    });
+    function approveTransfer() {
+      const store = document.getElementById('store').value;
+      const toStore = document.getElementById('toStore').value;
+      const driver1 = document.getElementById('driver1').value || storeConfigs[store].drivers?.driver1 || '';
+      const driver2 = document.getElementById('driver2').value || storeConfigs[store].drivers?.driver2 || '';
+      const vehicle = document.getElementById('vehicle').value;
+      const route = document.getElementById('route').value;
+      const departureDate = document.getElementById('departureDate').value;
+      const departureTime = document.getElementById('departureTime').value;
+      const arrivalTime = document.getElementById('arrivalTime').value;
+      const split = document.getElementById('split').checked;
 
-    document.getElementById('cancel-btn').addEventListener('click', () => {
+      window.api.sendApproval({
+        store,
+        toStore,
+        driver1,
+        driver2,
+        vehicle,
+        route,
+        departureDate,
+        departureTime,
+        arrivalTime,
+        split,
+        headers: excelHeaders // Pass headers to auto.js
+      });
+    }
+
+    function cancelTransfer() {
       window.api.sendCancel();
-    });
-
-    window.api.onError((error) => {
-      alert("Error: " + error);
-    });
+    }
   </script>
 </body>
 </html>

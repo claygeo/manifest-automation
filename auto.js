@@ -1,7 +1,6 @@
-// auto.js - Final Version (with Electron File Dialog for File Selection)
+// auto.js - Updated Version for Store Transfer Automation with Split Functionality
 require('dotenv').config();
 const logger = require('./src/utils/logger');
-const ExcelParser = require('./src/utils/excelParser');
 const { retry } = require('./src/utils/retry');
 const ErrorHandler = require('./src/utils/errorHandler');
 const EnhancedProgressTracker = require('./src/utils/enhancedProgress');
@@ -13,17 +12,32 @@ const fs = require('fs');
 const fsPromises = fs.promises;
 const { spawn } = require('child_process');
 
+// Store-specific configurations (for reference, though data comes from Electron)
+const storeConfigs = {
+  FTP: {
+    toStore: 'Ft Pierce Warehouse Hub',
+    drivers: { driver1: 'Ange', driver2: 'James Roberts' },
+    departureTime: '07:00 AM',
+    arrivalTime: '12:00 PM'
+  },
+  Ocala: {
+    toStore: 'Ocala Warehouse Hub',
+    drivers: { driver1: 'Sergio Hervis', driver2: 'Courtney Bruce' },
+    departureTime: '12:00 PM',
+    arrivalTime: '07:00 PM'
+  },
+  Homestead: {
+    toStore: 'Homestead Processing Hub'
+  },
+  'Mt. Dora': {
+    toStore: 'Mt. Dora Processing Hub'
+  }
+};
+
 /* ===================== Utility: Select Excel File via Electron Dialog ===================== */
-/**
- * Spawns an Electron process that opens a file selection dialog.
- * The selected file path is written to temp/selectedExcel.json.
- * Returns the full path of the selected file.
- */
 async function selectExcelFile(rootDir) {
   const electronBinary = require('electron');
   const selectionModulePath = path.join(__dirname, 'src', 'selection', 'main.js');
-  
-  // Spawn the selection module (it will open the dialog and write the selection)
   await new Promise((resolve, reject) => {
     const selectionProcess = spawn(electronBinary, [selectionModulePath, rootDir], {
       stdio: 'inherit',
@@ -35,8 +49,6 @@ async function selectExcelFile(rootDir) {
     });
     selectionProcess.on('error', (err) => reject(err));
   });
-  
-  // Read the selected file path from the temporary JSON file
   const tempFile = path.join(rootDir, 'temp', 'selectedExcel.json');
   try {
     const rawData = await fsPromises.readFile(tempFile, 'utf-8');
@@ -50,218 +62,47 @@ async function selectExcelFile(rootDir) {
 }
 
 /* ===================== Date Formatting Helper ===================== */
-function formatDateForInput(dateInput) {
+function formatDateForInput(dateInput, time) {
   let date = dateInput instanceof Date ? dateInput : new Date(dateInput);
   const pad = n => n.toString().padStart(2, '0');
   const month = pad(date.getMonth() + 1);
   const day = pad(date.getDate());
   const year = date.getFullYear();
-  let hours = date.getHours();
-  const minutes = pad(date.getMinutes());
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  hours = hours % 12;
-  if (hours === 0) hours = 12;
-  hours = pad(hours);
-  return `${month}-${day}-${year} ${hours}:${minutes} ${ampm}`;
+  return `${month}-${day}-${year} ${time}`;
 }
 
-/* ===================== New Transfer-Level Extraction ===================== */
-function extractField(worksheet, fieldName) {
+/* ===================== Extract Data from Excel ===================== */
+function extractTransferData(worksheet) {
   const range = XLSX.utils.decode_range(worksheet['!ref']);
-  const maxRow = Math.min(range.s.r + 30, range.e.r);
-  const maxCol = Math.min(range.s.c + 10, range.e.c);
-  for (let row = range.s.r; row <= maxRow; row++) {
-    for (let col = range.s.c; col < maxCol; col++) {
+  const data = [];
+  const headers = [];
+  
+  // Dynamically read headers from the first row
+  for (let col = range.s.c; col <= range.e.c; col++) {
+    const cellAddress = XLSX.utils.encode_cell({ r: range.s.r, c: col });
+    const cell = worksheet[cellAddress];
+    headers.push(cell && cell.v ? cell.v.toString().trim() : '');
+  }
+
+  // Extract store names from headers (assuming D-G are [Store] Units and [Store] Cases)
+  const store1 = headers[3].replace(' Units', ''); // e.g., "FTP Units" -> "FTP"
+  const store2 = headers[5].replace(' Units', ''); // e.g., "Ocala Units" -> "Ocala"
+
+  // Extract data rows
+  for (let row = range.s.r + 1; row <= range.e.r; row++) {
+    const rowData = {};
+    headers.forEach((header, col) => {
       const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
       const cell = worksheet[cellAddress];
-      if (cell && cell.v != null && cell.v.toString().trim().toLowerCase() === fieldName.toLowerCase()) {
-        const nextCellAddress = XLSX.utils.encode_cell({ r: row, c: col + 1 });
-        const nextCell = worksheet[nextCellAddress];
-        return nextCell && nextCell.v != null ? nextCell.v.toString().trim() : null;
-      }
-    }
-  }
-  return null;
-}
-
-function extractTransferInfo(worksheet) {
-  return {
-    store: extractField(worksheet, "Store"),
-    driver1: extractField(worksheet, "Driver 1"),
-    driver2: extractField(worksheet, "Driver 2"),
-    vehicle: extractField(worksheet, "Vehicle"),
-    departureDate: extractField(worksheet, "Departure Time") || extractField(worksheet, "Departure Date"),
-    arrivalDate: extractField(worksheet, "Arrival Time") || extractField(worksheet, "Arrival Date"),
-    route: extractField(worksheet, "Route") || extractField(worksheet, "Route/Description")
-  };
-}
-
-/* ===================== New Product Table Extraction ===================== */
-function extractProductTable(worksheet) {
-  const range = XLSX.utils.decode_range(worksheet['!ref']);
-  let headerRowIndex = -1;
-  let headers = [];
-
-  const requiredHeaders = {
-    productName: ["product name", "label/description", "product"],
-    barcode: ["barcode", "value"],
-    externalCode: ["external code", "ext code"],
-    qty: ["qty", "quantity", "qnty"]
-  };
-
-  for (let row = range.s.r; row <= Math.min(range.s.r + 200, range.e.r); row++) {
-    let rowHeaders = [];
-    for (let col = range.s.c; col <= range.e.c; col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-      const cell = worksheet[cellAddress];
-      rowHeaders.push(cell && cell.v != null ? cell.v.toString().trim().toLowerCase() : "");
-    }
-    if (rowHeaders.some(val => requiredHeaders.productName.includes(val))) {
-      headerRowIndex = row;
-      headers = rowHeaders;
-      break;
-    }
-  }
-
-  if (headerRowIndex === -1) {
-    return [];
-  }
-
-  const headerMap = {};
-  for (let key in requiredHeaders) {
-    for (let i = 0; i < headers.length; i++) {
-      if (requiredHeaders[key].includes(headers[i])) {
-        headerMap[key] = i;
-        break;
-      }
-    }
-  }
-
-  if (
-    headerMap.productName === undefined ||
-    headerMap.barcode === undefined ||
-    headerMap.externalCode === undefined ||
-    headerMap.qty === undefined
-  ) {
-    throw new Error(
-      "Product table is missing one or more required headers: Product Name, Barcode, External Code, QTY/Quantity"
-    );
-  }
-
-  const products = [];
-  for (let row = headerRowIndex + 1; row <= range.e.r; row++) {
-    const prodCellAddress = XLSX.utils.encode_cell({ r: row, c: headerMap.productName });
-    const prodCell = worksheet[prodCellAddress];
-    const prodValue = prodCell && prodCell.v != null ? prodCell.v.toString().trim() : "";
-    if (prodValue === "") {
-      break;
-    }
-    const barcodeCell = worksheet[XLSX.utils.encode_cell({ r: row, c: headerMap.barcode })];
-    const externalCodeCell = worksheet[XLSX.utils.encode_cell({ r: row, c: headerMap.externalCode })];
-    const qtyCell = worksheet[XLSX.utils.encode_cell({ r: row, c: headerMap.qty })];
-    const product = {
-      productName: prodValue,
-      barcode: barcodeCell && barcodeCell.v != null ? barcodeCell.v.toString().trim() : "N/A",
-      externalCode: externalCodeCell && externalCodeCell.v != null ? externalCodeCell.v.toString().trim() : "N/A",
-      qty: qtyCell && qtyCell.v != null ? qtyCell.v.toString().trim() : "N/A"
-    };
-    products.push(product);
-  }
-  return products;
-}
-
-/* ===================== Read Transfer Data ===================== */
-async function readTransferData(filePath) {
-  try {
-    logger.info('Reading Excel file:', { filePath });
-    const workbook = XLSX.readFile(filePath, {
-      cellDates: true,
-      cellNF: true,
-      cellText: false,
-      cellStyles: true,
-      cellFormula: true
+      rowData[header] = cell && cell.v != null ? cell.v.toString().trim() : '';
     });
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const transferInfo = extractTransferInfo(worksheet);
-    const products = extractProductTable(worksheet);
-    const transferData = {
-      ...transferInfo,
-      products: products
-    };
-    const validationErrors = validateTransferData(transferData);
-    if (validationErrors.length > 0) {
-      throw new Error(`Validation errors: ${validationErrors.join(', ')}`);
-    }
-    logger.info('Transfer data validated successfully');
-    return transferData;
-  } catch (error) {
-    logger.error('Error reading Excel file:', error);
-    throw error;
+    if (rowData['#']) data.push(rowData);
   }
+
+  return { data, stores: [store1, store2], headers };
 }
 
-/* ===================== Validate Transfer Data ===================== */
-function validateTransferData(transferData) {
-  const errors = [];
-  const requiredFields = config.get('validation.requiredFields');
-  const dateRules = config.get('validation.dateRules');
-  requiredFields.forEach(field => {
-    if (!transferData[field]) {
-      errors.push(`Missing required field: ${field}`);
-    }
-  });
-  if (transferData.departureDate && transferData.arrivalDate) {
-    if (!(transferData.departureDate instanceof Date)) {
-      transferData.departureDate = new Date(transferData.departureDate);
-    }
-    if (!(transferData.arrivalDate instanceof Date)) {
-      transferData.arrivalDate = new Date(transferData.arrivalDate);
-    }
-    if (isNaN(transferData.departureDate.getTime())) {
-      errors.push('Invalid departure date format');
-    }
-    if (isNaN(transferData.arrivalDate.getTime())) {
-      errors.push('Invalid arrival date format');
-    }
-    const timeDiff = transferData.arrivalDate.getTime() - transferData.departureDate.getTime();
-    if (timeDiff < dateRules.minAdvanceTime) {
-      errors.push('Departure and arrival times must be at least 30 minutes apart');
-    }
-    if (timeDiff > dateRules.maxTripDuration) {
-      errors.push('Trip duration cannot exceed 24 hours');
-    }
-    const departureDay = transferData.departureDate.toLocaleString('en-US', { weekday: 'long' });
-    if (!dateRules.allowedDays.includes(departureDay)) {
-      errors.push(`Transfers not allowed on ${departureDay}`);
-    }
-    const departureHour = transferData.departureDate.getHours();
-    const [startHour] = dateRules.allowedHours.start.split(':').map(Number);
-    const [endHour] = dateRules.allowedHours.end.split(':').map(Number);
-    if (departureHour < startHour || departureHour > endHour) {
-      errors.push('Transfer must be scheduled during business hours');
-    }
-  }
-  if (!transferData.products || transferData.products.length === 0) {
-    errors.push('No products found');
-  } else if (transferData.products.length > config.get('excel.dataValidation.maxProducts')) {
-    errors.push(`Number of products exceeds maximum limit of ${config.get('excel.dataValidation.maxProducts')}`);
-  }
-  return errors;
-}
-
-/* ===================== Write Temporary Data ===================== */
-async function writeTempData(data) {
-  const tempDir = path.join(__dirname, 'temp');
-  if (!fs.existsSync(tempDir)) {
-    fs.mkdirSync(tempDir, { recursive: true });
-  }
-  const filePath = path.join(tempDir, 'transferData.json');
-  await fsPromises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
-  return filePath;
-}
-
-/* ===================== Electron Confirmation ===================== */
+/* ===================== Electron Confirmation Window ===================== */
 async function openConfirmationWindow(rootDir) {
   return new Promise((resolve, reject) => {
     const electronBinary = require('electron');
@@ -271,23 +112,37 @@ async function openConfirmationWindow(rootDir) {
       shell: true
     });
     electronProcess.on('close', (code) => {
-      resolve(code === 0);
+      if (code === 0) {
+        fs.readFile(path.join(rootDir, 'temp', 'transferConfig.json'), 'utf-8', (err, data) => {
+          if (err) reject(err);
+          else resolve(JSON.parse(data));
+        });
+      } else {
+        // Check for cancellation flag
+        const cancelFlagPath = path.join(rootDir, 'temp', 'cancelFlag.json');
+        if (fs.existsSync(cancelFlagPath)) {
+          const cancelData = JSON.parse(fs.readFileSync(cancelFlagPath, 'utf-8'));
+          if (cancelData.canceled) {
+            resolve(null); // Indicate cancellation
+          } else {
+            resolve(null); // Non-zero exit without explicit cancel
+          }
+        } else {
+          resolve(null); // Non-zero exit without cancel flag
+        }
+      }
     });
-    electronProcess.on('error', (err) => {
-      reject(err);
-    });
+    electronProcess.on('error', (err) => reject(err));
   });
 }
 
-async function loadApprovedTransferData(rootDir) {
-  const tempFile = path.join(rootDir, 'temp', 'transferData.json');
-  try {
-    const rawData = await fsPromises.readFile(tempFile, 'utf-8');
-    return JSON.parse(rawData);
-  } catch (error) {
-    logger.error('Error loading approved transfer data:', error);
-    throw error;
-  }
+/* ===================== Write Temporary Data ===================== */
+async function writeTempData(data) {
+  const tempDir = path.join(__dirname, 'temp');
+  if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
+  const filePath = path.join(tempDir, 'transferData.json');
+  await fsPromises.writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  return filePath;
 }
 
 /* ===================== Main Automation Process ===================== */
@@ -403,41 +258,83 @@ async function createTransferProcess(transferData) {
     progress.addStep('Details Entry');
     await retry(async () => {
       await ErrorHandler.withErrorHandler(page, 'fill-details', async () => {
+        // Validate transferData before proceeding
+        if (!transferData.toStore || !transferData.driver1 || !transferData.departureDate || !transferData.departureTime || !transferData.arrivalTime) {
+          logger.error('Missing required fields in transferData:', transferData);
+          throw new Error('Missing required fields in transferData');
+        }
+
+        // Click the "To store*" dropdown
         await page.locator('div').filter({ hasText: /^To store\*$/ }).locator('div').nth(1).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
-        await page.locator('li').filter({ hasText: transferData.store }).click();
+        await page.locator('li').filter({ hasText: transferData.toStore }).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
+
+        // Driver 1
         await page.locator('input[name="\\$\\$biotrackFl\\$biotrackDriver1"]').click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
-        await page.locator('li').filter({ hasText: transferData.driver1 }).click();
+        const driver1Options = await page.locator('li').allTextContents();
+        const driver1Option = page.locator('li').filter({ hasText: transferData.driver1 });
+        if (await driver1Option.count() === 0) {
+          logger.error(`Driver 1 "${transferData.driver1}" not found in options:`, driver1Options);
+          throw new Error(`Driver 1 "${transferData.driver1}" not found`);
+        }
+        await driver1Option.first().click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
+
+        // Driver 2
         if (transferData.driver2) {
           await page.locator('input[name="\\$\\$biotrackFl\\$biotrackDriver2"]').click();
           await page.waitForTimeout(config.get('browser.timeout.animation'));
-          await page.locator('li').filter({ hasText: transferData.driver2 }).click();
+          const driver2Options = await page.locator('li').allTextContents();
+          const driver2Option = page.locator('li').filter({ hasText: transferData.driver2 });
+          if (await driver2Option.count() === 0) {
+            logger.error(`Driver 2 "${transferData.driver2}" not found in options:`, driver2Options);
+            throw new Error(`Driver 2 "${transferData.driver2}" not found`);
+          }
+          await driver2Option.first().click();
           await page.waitForTimeout(config.get('browser.timeout.animation'));
         }
+
+        // Vehicle
         await page.locator('input[name="\\$\\$biotrackFl\\$biotrackVehicle"]').click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
-        await page.locator('li').filter({ hasText: transferData.vehicle }).first().click();
+        if (transferData.vehicle) {
+          const vehicleOptions = await page.locator('li').allTextContents();
+          const vehicleOption = page.locator('li').filter({ hasText: transferData.vehicle });
+          if (await vehicleOption.count() === 0) {
+            logger.error(`Vehicle "${transferData.vehicle}" not found in options:`, vehicleOptions);
+            throw new Error(`Vehicle "${transferData.vehicle}" not found`);
+          }
+          await vehicleOption.first().click();
+        } else {
+          logger.info('No vehicle specified, skipping vehicle selection');
+        }
         await page.waitForTimeout(config.get('browser.timeout.animation'));
-        const departureDateFormatted = formatDateForInput(transferData.departureDate);
-        const arrivalDateFormatted = formatDateForInput(transferData.arrivalDate);
+
+        // Departure and Arrival Dates/Times
+        const departureDateFormatted = formatDateForInput(transferData.departureDate, transferData.departureTime);
+        const arrivalDateFormatted = formatDateForInput(transferData.departureDate, transferData.arrivalTime);
+
         await page.locator('div').filter({ hasText: /^Approximate departure date\*$/ }).locator('div').nth(1).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         await page.getByPlaceholder('MM-DD-YYYY hh:mm A').fill(departureDateFormatted);
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         await page.locator('button').filter({ hasText: 'Ok' }).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
+
         await page.locator('div').filter({ hasText: /^Approximate arrival date\*$/ }).locator('div').nth(1).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         await page.getByPlaceholder('MM-DD-YYYY hh:mm A').fill(arrivalDateFormatted);
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         await page.locator('button').filter({ hasText: 'Ok' }).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
+
+        // Route
         await page.locator('textarea[name="\\$\\$biotrackFl\\$plannedRoad"]').click();
-        await page.locator('textarea[name="\\$\\$biotrackFl\\$plannedRoad"]').fill(transferData.route);
+        await page.locator('textarea[name="\\$\\$biotrackFl\\$plannedRoad"]').fill(transferData.route || 'Default Route');
         await page.waitForTimeout(config.get('browser.timeout.animation'));
+
         progress.updateStepProgress(100, 'Details completed');
       });
     }, {
@@ -459,35 +356,48 @@ async function createTransferProcess(transferData) {
       await page.waitForTimeout(config.get('browser.timeout.animation'));
       await page.waitForTimeout(config.get('browser.timeout.navigation'));
 
-      const maxProducts = config.get('processing.maxProducts') || transferData.products.length;
-      for (let i = 0; i < Math.min(maxProducts, transferData.products.length); i++) {
-        const product = transferData.products[i];
-        logger.info(`Processing product ${i + 1} of ${maxProducts}:`, { productName: product.productName });
-        
-        if (!product.externalCode || product.externalCode === 'N/A') {
-          logger.warn(`Skipping product ${i + 1}: External code not found`);
+      const maxProducts = config.get('processing.maxProducts') || transferData.transferData.length;
+      const selectedStore = transferData.store;
+      const unitColumn = `${selectedStore} Units`;
+      const caseColumn = `${selectedStore} Cases`;
+
+      // Check if the selected store has data in the Excel sheet
+      if (!transferData.headers.includes(unitColumn) && !transferData.headers.includes(caseColumn)) {
+        logger.info(`No data found for store ${selectedStore} in Excel sheet. Skipping product processing.`);
+        progress.updateStepProgress(100, 'No products to process for this store');
+        return;
+      }
+
+      for (let i = 0; i < Math.min(maxProducts, transferData.transferData.length); i++) {
+        const row = transferData.transferData[i];
+        logger.info(`Processing row ${i + 1} of ${maxProducts}:`, { row });
+
+        const qty = row[unitColumn] || row[caseColumn] || '0'; // Default to 0 if no units or cases
+
+        if (!row['Last 4 of Barcode'] || row['Last 4 of Barcode'] === 'N/A' || qty === '0') {
+          logger.warn(`Skipping row ${i + 1}: Barcode not found or no quantity`);
           continue;
         }
-        
-        const searchQuery = product.externalCode;
-        
+
+        const searchQuery = row['Last 4 of Barcode'];
+
         await page.waitForSelector('button:has-text("Add product manually")', { timeout: config.get('browser.timeout.element') });
         await page.getByRole('button', { name: 'Add product manually' }).click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
-        
+
         const searchBox = await page.getByRole('textbox', { name: 'Search' });
         await searchBox.click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         await searchBox.fill(searchQuery);
         await page.waitForTimeout(config.get('browser.timeout.animation'));
-        
+
         if (await page.getByText('No items found').isVisible()) {
           await searchBox.fill('');
           await page.waitForTimeout(config.get('browser.timeout.animation'));
-          await searchBox.fill(product.barcode);
+          await searchBox.fill(row['Last 4 of Barcode']);
           await page.waitForTimeout(config.get('browser.timeout.animation'));
         }
-        
+
         await page.getByRole('listitem').first().click();
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         await page.getByRole('button', { name: 'Apply' }).click();
@@ -496,7 +406,7 @@ async function createTransferProcess(transferData) {
         await page.waitForTimeout(config.get('browser.timeout.animation'));
         const qtyInput = page.locator('input[name="qty"]').last();
         await qtyInput.click();
-        await qtyInput.fill(product.qty);
+        await qtyInput.fill(qty);
         await page.waitForTimeout(config.get('browser.timeout.animation'));
       }
       progress.updateStepProgress(100, 'Products processed');
@@ -509,8 +419,19 @@ async function createTransferProcess(transferData) {
       progress.updateStepProgress(50, 'Applying changes');
       await page.getByRole('button', { name: 'Apply' }).click();
       await page.waitForTimeout(config.get('browser.timeout.animation'));
+
+      // Check if split is requested and handle the Split All action
+      if (transferData.split) {
+        logger.info('Split option selected, clicking "Split All" button');
+        await page.getByRole('button', { name: 'Split All' }).click(); // Left-click (default)
+        logger.info('Waiting 30 seconds after Split All action');
+        await page.waitForTimeout(30000); // Wait 30 seconds as required
+      } else {
+        logger.info('Split option not selected, skipping Split All');
+      }
+
       progress.updateStepProgress(90, 'Updating draft');
-      await page.getByRole('button', { name: 'Update draft' }).click();
+      await page.getByRole('button', { name: 'Update draft' }).click(); // Left-click (default)
       await page.waitForTimeout(config.get('browser.timeout.animation'));
       progress.updateStepProgress(100, 'Transfer finalized');
     }, {
@@ -547,30 +468,36 @@ async function createTransferProcess(transferData) {
   try {
     const rootDir = process.cwd();
     progress.addStep('File Detection');
-    // Instead of automatically picking the first file, call the Electron file dialog module.
     const excelPath = await selectExcelFile(rootDir);
     progress.completeStep('File Detection');
 
     progress.addStep('Data Reading');
-    let transferData = await readTransferData(excelPath);
+    const workbook = XLSX.readFile(excelPath, { cellDates: true, cellNF: true });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const { data, stores, headers } = extractTransferData(worksheet);
+    const transferData = { transferData: data, stores, headers };
     progress.completeStep('Data Reading');
 
-    await writeTempData(transferData);
-
     progress.addStep('User Confirmation');
-    const userConfirmed = await openConfirmationWindow(rootDir);
-    progress.completeStep('User Confirmation');
-
-    if (!userConfirmed) {
+    const userConfig = await openConfirmationWindow(rootDir);
+    if (!userConfig) {
       logger.info('Transfer cancelled by user from confirmation window.');
+      progress.completeStep('User Confirmation');
+      progress.finish();
+      // Clean up temp files
+      const tempDir = path.join(rootDir, 'temp');
+      if (fs.existsSync(tempDir)) {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      }
       process.exit(0);
     }
-
-    const approvedData = await loadApprovedTransferData(rootDir);
+    await writeTempData({ ...userConfig, ...transferData });
+    progress.completeStep('User Confirmation');
 
     progress.addStep('Transfer Creation');
-    logger.info('Starting transfer process...');
-    await createTransferProcess(approvedData);
+    logger.info('Starting transfer process with data:', userConfig);
+    await createTransferProcess({ ...userConfig, ...transferData });
     progress.completeStep('Transfer Creation');
     logger.info('Transfer process completed successfully');
   } catch (error) {
@@ -580,56 +507,4 @@ async function createTransferProcess(transferData) {
   } finally {
     progress.finish();
   }
-  if (process.argv.includes('--run-tests')) {
-    await runTests();
-  }
 })();
-
-async function runTests() {
-  const assert = require('assert');
-  const os = require('os');
-  logger.info('\n--- Running Unit Tests ---\n');
-  function createTempDir() {
-    return fs.mkdtempSync(path.join(os.tmpdir(), 'auto-manifest-test-'));
-  }
-  function createDummyExcelFile(filePath, sheetName = 'Sheet1') {
-    const XLSX = require('xlsx');
-    const workbook = XLSX.utils.book_new();
-    const ws_data = [['Header1', 'Header2'], ['Data1', 'Data2']];
-    const worksheet = XLSX.utils.aoa_to_sheet(ws_data);
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
-    XLSX.writeFile(workbook, filePath);
-  }
-  (function testNoExcelFiles() {
-    const tempDir = createTempDir();
-    let errorCaught = false;
-    selectExcelFile(tempDir)
-      .then(() => { assert.fail('Expected error was not thrown.'); })
-      .catch((error) => { errorCaught = true; assert.strictEqual(error.message, 'File selection cancelled or failed.'); })
-      .finally(() => {
-        fs.rmdirSync(tempDir, { recursive: true });
-        assert.strictEqual(errorCaught, true, 'Error was not caught for no Excel files.');
-        logger.info('Test 1 (No Excel files) passed.');
-      });
-  })();
-  await (async function testValidExcelFile() {
-    const tempDir = createTempDir();
-    const dummyFileName = 'test.xlsx';
-    const dummyFilePath = path.join(tempDir, dummyFileName);
-    const requiredSheet = config.get('excel.requiredSheet') || 'Sheet1';
-    createDummyExcelFile(dummyFilePath, requiredSheet);
-    // Write the dummy file path to the temporary selection file
-    const tempSelectionFile = path.join(tempDir, 'selectedExcel.json');
-    await fsPromises.writeFile(tempSelectionFile, JSON.stringify({ filePath: dummyFilePath }), 'utf-8');
-    try {
-      const foundFile = await selectExcelFile(tempDir);
-      assert.strictEqual(foundFile, dummyFilePath, 'The found file does not match the expected file.');
-      logger.info('Test 2 (Valid Excel file) passed.');
-    } catch (error) {
-      assert.fail('Unexpected error for valid Excel file: ' + error.message);
-    } finally {
-      fs.rmdirSync(tempDir, { recursive: true });
-    }
-  })();
-  logger.info('--- All Unit Tests Completed ---\n');
-}
