@@ -26,7 +26,7 @@ A Node.js script for automating inventory transfer creation from Excel files, us
 - Environment variables: MS_USERNAME, MS_PASSWORD in a .env file
 
 ## Setup
-1. Clone the repository: git clone [your-repo-url]
+1. Clone the repository: git clone https://github.com/claygeo/manifest-automation.gt
 2. Navigate to the project directory: cd auto-manifest
 3. Install dependencies: npm install
 4. Install Playwright browsers: npx playwright install
